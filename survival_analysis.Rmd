@@ -9,6 +9,7 @@ output: pdf_document
 library(readr)
 library(dplyr)
 library(ggplot2)
+library(reshape2)
 ```
 
 
@@ -84,18 +85,90 @@ table(turbofan_df$status)
 
 The next step is to carry out feature selection, namely selecting columns/variables that can be included in the model
 
+#### Correlation Heatmap
+
+We can check the correlation between columns of candidate predictors to see if there is a high correlation between predictors. Variables that have a high correlation with other variables need to be selected only to avoid multicollinearity
+
+```{r}
+# Calculate the squared correlation matrix and convert to long format
+squared_corr <- cor(turbofan_df)^2
+melted_corr <- melt(squared_corr)
+
+# Filter for stronger correlations to reduce clutter
+threshold <- 0.5 # Example threshold, adjust as needed
+melted_corr_filtered <- subset(melted_corr, value >= threshold & Var1 != Var2)
+
+# Create the heatmap
+ggplot(melted_corr_filtered, aes(x = Var1, y = Var2, fill = value)) +
+  geom_tile() +
+  scale_fill_gradient(low = "blue", high = "red") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1),
+        axis.title = element_blank()) +
+  labs(fill = "Squared\nCorrelation") +
+  geom_text(aes(label = sprintf("%.2f", value)), size = 3)
+```
+
+In the plot above, the correlation between variables looks quite high. In this case we will try to first select the columns sensor_measurement_04, sensor_measurement_08, sensor_measurement_11, sensor_measurement_14 
+
+```{r}
+# Selected numeric and category columns
+selected_columns <- c("sensor_measurement_04", "sensor_measurement_11", "sensor_measurement_14", "operational_setting_3", "sensor_measurement_16", "status", "cycle")
+
+# Assuming 'turbofan_df' is a dataframe and columns are appropriately formatted
+cleaned_data <- turbofan_df[selected_columns]
+
+# Calculate the squared correlation matrix and convert to long format
+squared_corr <- cor(cleaned_data)^2
+melted_corr <- melt(squared_corr)
+
+# Filter for stronger correlations to reduce clutter
+threshold <- 0.5 # Example threshold, adjust as needed
+melted_corr_filtered <- subset(melted_corr, value >= threshold & Var1 != Var2)
+
+# Create the heatmap
+ggplot(melted_corr_filtered, aes(x = Var1, y = Var2, fill = value)) +
+  geom_tile() +
+  scale_fill_gradient(low = "blue", high = "red") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1),
+        axis.title = element_blank()) +
+  labs(fill = "Squared\nCorrelation") +
+  geom_text(aes(label = sprintf("%.2f", value)), size = 3)
+
+```
+
 #### Check for Uniqueness
 
+First we will check for many unique values in each column and then the columns that have few unique values will be replaced with the category data type.
 
+```{r}
+unique_counts <- sapply(turbofan_df, function(x) length(unique(x)))
 
+cat("Unique values count per column:\n")
+for(col in names(unique_counts)) {
+  cat(col, ":", unique_counts[col], "\n")
+}
+```
 
+```{r}
+# Change specified columns to category (factor)
+turbofan_df <- turbofan_df %>%
+  mutate(across(c(operational_setting_3, sensor_measurement_16), as.factor))
 
+# View information about the dataframe to confirm the changes
+glimpse(turbofan_df)
+```
 
+### Data Preparation for Modelling
 
+The next step is to prepare the data for modeling. Things to pay attention to are:
+1. For columns with category types, One Hot Encoding needs to be done.
+2. For target data, it needs to be written in array form with each element being a tuple consisting of the machine state (True/False) and the time/cycle.
 
+```{r}
 
-
-
+```
 
 
 
