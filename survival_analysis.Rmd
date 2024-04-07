@@ -1,0 +1,110 @@
+---
+title: "Survival Analysis"
+author: "Nikhil, Atharva & Urjit"
+date: "2024-04-05"
+output: pdf_document
+---
+
+```{r}
+library(readr)
+library(dplyr)
+library(ggplot2)
+```
+
+
+### Import Data & Preprocessing
+
+```{r}
+# Define column names
+column1 <- c("machine_name", "cycle", "operational_setting_1", "operational_setting_2", "operational_setting_3")
+column2 <- paste0("sensor_measurement_", sprintf("%02d", 1:21))
+columns <- c(column1, column2)
+```
+
+```{r}
+# Read Data
+turbofan_df <- read_delim("data/train_FD002.txt",
+                          delim = " ", col_names = columns, show_col_types = FALSE, trim_ws = TRUE)
+
+# Dropping Empty Columns
+turbofan_df <- turbofan_df %>%
+  select(-X27, -X28)
+
+head(turbofan_df)
+```
+
+#### Create Censored Data 
+
+If we examine the data above, we see that we do not have right-censored observations. To obtain such observations, we follow these steps:
+
+1. Select the maximum cycle until each machine breaks down.
+2. Assume an endpoint for the observation period.
+
+By doing this, we ensure that our data includes right-censored observations. This is crucial for survival analysis, as it allows us to properly analyze situations where the event of interest (in this case, machine breakdown) has not occurred by the end of the observation period for some subjects (machines). This approach provides a more comprehensive understanding of the lifespan and reliability of the machines by including both those that have failed and those that are still operational by the end of the study.
+
+```{r}
+turbofan_df <- turbofan_df %>% 
+  group_by(machine_name) %>%
+  mutate(max_cycle = max(cycle)) %>%
+  filter(cycle == max_cycle) %>%
+  ungroup() 
+
+head(turbofan_df)
+```
+
+```{r}
+# Create the lollipop plot
+ggplot(turbofan_df, aes(x = machine_name, y = cycle)) +
+  geom_segment(aes(x = machine_name, xend = machine_name, y = 1, yend = cycle), color = 'skyblue') +
+  geom_point(color = 'blue', size = 1.5) +
+  geom_point(aes(y = 1), color = 'red', size = 1.5) +
+  coord_flip() + 
+  labs(title = "Max. Cycle", x = "Machine ID", y = "Cycle") +
+  theme_minimal()
+
+```
+
+We assume that the final observation time limit is 220 cycles so that when the machine is still active after 220 cycles, the machine will be considered right censored
+
+```{r}
+# Create status column
+turbofan_df <- turbofan_df %>%
+  mutate(status = ifelse(cycle > 200, FALSE, TRUE))
+
+head(turbofan_df)
+```
+
+Machine status True indicates that the machine is damaged within the observation time period, while False indicates that the machine has not experienced any damage during the observation time period
+
+```{r}
+table(turbofan_df$status)
+```
+
+### Exploratory Data Analysis
+
+The next step is to carry out feature selection, namely selecting columns/variables that can be included in the model
+
+#### Check for Uniqueness
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
