@@ -154,7 +154,7 @@ for(col in names(unique_counts)) {
 ```{r}
 # Change specified columns to category (factor)
 turbofan_df <- turbofan_df %>%
-  mutate(across(c(operational_setting_3, sensor_measurement_16), as.factor))
+  mutate(across(c(operational_setting_3, sensor_measurement_16, sensor_measurement_19), as.factor))
 
 # View information about the dataframe to confirm the changes
 glimpse(turbofan_df)
