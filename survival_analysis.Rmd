@@ -10,6 +10,8 @@ library(readr)
 library(dplyr)
 library(ggplot2)
 library(reshape2)
+library(survival)
+library(glmnet)
 ```
 
 
@@ -160,24 +162,156 @@ turbofan_df <- turbofan_df %>%
 glimpse(turbofan_df)
 ```
 
-### Data Preparation for Modelling
-
-The next step is to prepare the data for modeling. Things to pay attention to are:
-1. For columns with category types, One Hot Encoding needs to be done.
-2. For target data, it needs to be written in array form with each element being a tuple consisting of the machine state (True/False) and the time/cycle.
+### Survival Analysis
 
 ```{r}
+fit.surv <- survfit(Surv(turbofan_df$max_cycle, turbofan_df$status) ~ 1)
+plot(fit.surv, xlab = "Cycles", ylab = "Estimated Probability for Survival", 
+     main='Kaplan-Meier Survival Curve')
 
+summary(fit.surv, times =150)
+
+print(fit.surv)
+```
+The Kaplan-Meier estimator revealed declining survival probabilities for turbofan engines with increasing operational cycles, pinpointing critical periods of heightened failure risk.
+
+#### Impact of Settings
+
+##### Operational Setting 3
+```{r}
+# Kaplan-Mier Plot
+fit.op <- survfit(Surv(turbofan_df$max_cycle, turbofan_df$status) ~ turbofan_df$operational_setting_3)
+plot(fit.op, xlab = "Cycles", ylab = "Estimated Probability for Survival", 
+     col = c (2 ,4), main='Kaplan-Meier Survival Curve Stratified with 
+     operational_setting_3')
+legend_labels <- levels(turbofan_df$operational_setting_1)
+
+legend("topright", levels(turbofan_df$operational_setting_3), col = c(2,4), lty = 1)   
 ```
 
+```{r}
+#Log-Rank Test
+logrank.test <- survdiff(Surv(turbofan_df$max_cycle, turbofan_df$status) ~ turbofan_df$operational_setting_3)
+
+logrank.test
+```
+```{r}
+coxph(Surv(turbofan_df$max_cycle, turbofan_df$status) ~ turbofan_df$operational_setting_3)
+```
+The test suggests the there is significant difference between the survival curves
+
+```{r}
+# Kaplan-Mier Survival Curve
+fit.sm <- survfit(Surv(turbofan_df$max_cycle, turbofan_df$status) ~ turbofan_df$sensor_measurement_16)
+plot(fit.sm, xlab = "Cycles", ylab = "Estimated Probability for Survival", 
+     col = c(2,4), main='Kaplan-Meier Survival Curve Stratified with 
+     sensor_measurement_16')
+
+legend("topright", levels(turbofan_df$sensor_measurement_16), col = c(2,4), lty = 1)   
+```
+
+```{r}
+# LogRank Test
+logrank.test <- survdiff(Surv(turbofan_df$max_cycle, turbofan_df$status) ~ turbofan_df$sensor_measurement_16)
+
+logrank.test
+```
+
+```{r}
+# Cox Proportional Hazards Model
+coxph(Surv(turbofan_df$max_cycle, turbofan_df$status) ~ turbofan_df$sensor_measurement_16)
+```
+##### Sensor Measurement 16
+
+```{r}
+# Kaplan-Mier Plot
+fit.sm <- survfit(Surv(turbofan_df$max_cycle, turbofan_df$status) ~ turbofan_df$sensor_measurement_19)
+plot(fit.sm, xlab = "Cycles", ylab = "Estimated Probability for Survival", 
+     col = c(2,4), main='Kaplan-Meier Survival Curve 
+     Stratified with sensor_measurement_19')
+
+legend("topright", levels(turbofan_df$sensor_measurement_19), col = c(2,4), lty = 1)   
+```
+```{r}
+#Log-Rank test
+logrank.test <- survdiff(Surv(turbofan_df$max_cycle, turbofan_df$status) ~ turbofan_df$sensor_measurement_19)
+
+logrank.test
+```
+
+```{r}
+#Cox-Proportional test
+coxph(Surv(turbofan_df$max_cycle, turbofan_df$status) ~ turbofan_df$sensor_measurement_19)
+```
+#levels(sensor_measurement_16)
+#TODO fix this part ----------------
+model <- coxph(Surv(max_cycle, status) ~ ., data = turbofan_df)
+summary(model)
+------------------------------------
+
+### GLMNet Model Building
+
+```{r}
+p <- ncol(turbofan_df) - 2
+
+data <- as.matrix(turbofan_df[, 3:p])
+show_fit=glmnet(data,Surv(turbofan_df$max_cycle, turbofan_df$status),standardize=TRUE,
+                lambda=seq(0,0.25,.001),alpha=1,family = "cox")
+print(show_fit)
+
+plot(show_fit,label=TRUE)
+plot(show_fit,xvar = "lambda",label=TRUE) 
+```
+
+```{r}
+# Partial Deviance
+surv_model <- cv.glmnet(data,Surv(turbofan_df$max_cycle, turbofan_df$status), family = "cox", 
+                        type.measure = "deviance",alpha=1,nfolds = 10)
+plot(surv_model)
+print(surv_model)
+```
+```{r}
+lambda_opt <- surv_model$lambda.1se
+
+# Fit the model using the optimal lambda value
+fit <- glmnet(data,Surv(turbofan_df$max_cycle, turbofan_df$status), family = "cox", 
+              type.measure = "deviance",alpha=1,lambda = lambda_opt)
+coef(fit)
+```
+```{r}
+predictions <- predict(fit, newx = data, type = "response")
 
 
+c_index <- Cindex(predictions,Surv(turbofan_df$max_cycle, turbofan_df$status))
+c_index
+```
 
+###### Cindex
+```{r}
+surv_model_C = cv.glmnet(data,Surv(turbofan_df$max_cycle, turbofan_df$status), 
+                         family = "cox", type.measure = "C", 
+                         alpha=1,nfolds = 10)
 
+lambda_opt <- surv_model_C$lambda.1se
 
+plot(surv_model_C)
+print(surv_model_C)
+```
 
+##### Fit the model using the optimal lambda value
+```{r}
+fit_C <- glmnet(data,Surv(turbofan_df$max_cycle, turbofan_df$status), 
+                family = "cox", 
+                type.measure = "C",alpha=1,lambda = lambda_opt)
+coef(fit_C)
+```
 
-
-
-
-
+##### Make predictions
+```{r}
+predictions <- predict(fit_C, newx = data, type = "response")
+```
+##### Evaluate the model performance using concordance index (c-index)
+```{r}
+c_index <- Cindex(predictions,Surv(turbofan_df$max_cycle, turbofan_df$status))
+c_index
+```
