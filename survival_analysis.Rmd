@@ -2,8 +2,13 @@
 title: "Survival Analysis"
 author: "Nikhil, Atharva & Urjit"
 date: "2024-04-05"
-output: pdf_document
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
 ---
+
+This rmd file explains the approach to this problem. It goes over all the techniques utilized in this project and provides a short description for each. The corresponsing project report goes over the results and discusses their implications in greater detail. 
 
 ```{r}
 library(readr)
@@ -15,7 +20,7 @@ library(glmnet)
 ```
 
 
-### Import Data & Preprocessing
+## Import Data & Preprocessing
 
 ```{r}
 # Define column names
@@ -36,7 +41,7 @@ turbofan_df <- turbofan_df %>%
 head(turbofan_df)
 ```
 
-#### Create Censored Data 
+## Data Censoring 
 
 If we examine the data above, we see that we do not have right-censored observations. To obtain such observations, we follow these steps:
 
@@ -83,7 +88,7 @@ Machine status True indicates that the machine is damaged within the observation
 table(turbofan_df$status)
 ```
 
-### Exploratory Data Analysis
+## Exploratory Data Analysis
 
 The next step is to carry out feature selection, namely selecting columns/variables that can be included in the model
 
@@ -153,6 +158,8 @@ for(col in names(unique_counts)) {
 }
 ```
 
+The columns `operational_setting_3`, `sensor_measurement_16`, and `sensor_measurement_19` are being converted to factor as there are just 2 unique values in all 3 of those columns.
+
 ```{r}
 # Change specified columns to category (factor)
 turbofan_df <- turbofan_df %>%
@@ -162,7 +169,7 @@ turbofan_df <- turbofan_df %>%
 glimpse(turbofan_df)
 ```
 
-### Survival Analysis
+## Survival Analysis
 
 ```{r}
 fit.surv <- survfit(Surv(turbofan_df$max_cycle, turbofan_df$status) ~ 1)
@@ -175,9 +182,15 @@ print(fit.surv)
 ```
 The Kaplan-Meier estimator revealed declining survival probabilities for turbofan engines with increasing operational cycles, pinpointing critical periods of heightened failure risk.
 
-#### Impact of Settings
+#### Analyzing the categorical variables
 
-##### Operational Setting 3
+The categorical variables `operational_setting_3`, `sensor_measurement_16`, and `sensor_measurement_19` will be analyzed using the following methods:
+
+1. Kaplan-Meier Plot
+2. Log rank test
+3. Cox proportional hazards model stratified on individual variable
+
+##### `operational_setting_3`
 ```{r}
 # Kaplan-Mier Plot
 fit.op <- survfit(Surv(turbofan_df$max_cycle, turbofan_df$status) ~ turbofan_df$operational_setting_3)
@@ -190,15 +203,25 @@ legend("topright", levels(turbofan_df$operational_setting_3), col = c(2,4), lty 
 ```
 
 ```{r}
-#Log-Rank Test
+#Log rank Test
 logrank.test <- survdiff(Surv(turbofan_df$max_cycle, turbofan_df$status) ~ turbofan_df$operational_setting_3)
 
 logrank.test
 ```
+
+The null hypothesis here is that there is no difference in the probability of an event (failure of the turbofan) between operational_setting_3 = 60 and operational_setting_3 = 100. This null hypothesis is rejected after performing the log-rank test because the p-value for the test (0.01) is less than 0.05. Therefore, there is a significant difference in the probability of failure of the turbofan for the two categories in operational_setting_3. This difference in probabilities is quantified by the Cox-proportional hazards model in the next step.
+
 ```{r}
+# Cox Proportional Hazards Model
 coxph(Surv(turbofan_df$max_cycle, turbofan_df$status) ~ turbofan_df$operational_setting_3)
 ```
-The test suggests the there is significant difference between the survival curves
+
+From the result of the Cox proportional hazards model stratified on operational_setting_3, it can be seen that the value for “exp(coef)” known as the hazard ratio is 0.4764. This indicates that the hazard of failure for engines with operational_setting_3 = 100 is approximately 47.64% lower compared to engines with operational_setting_3 = 60.
+
+
+In other words, engines operating at setting 100 have a lower risk of failure compared to engines operating at setting 60. This interpretation holds true while considering other factors constant within the model.
+
+#### `sensor_measurement_16`
 
 ```{r}
 # Kaplan-Mier Survival Curve
@@ -211,17 +234,25 @@ legend("topright", levels(turbofan_df$sensor_measurement_16), col = c(2,4), lty 
 ```
 
 ```{r}
-# LogRank Test
+# Log rank Test
 logrank.test <- survdiff(Surv(turbofan_df$max_cycle, turbofan_df$status) ~ turbofan_df$sensor_measurement_16)
 
 logrank.test
 ```
 
+The null hypothesis here is that there is no difference in the probability of an event (failure of the turbofan) between sensor_measurement_16 = 0.02 and sensor_measurement_16 = 0.03. The log-rank test fails to reject this null hypothesis because the p-value for the test (0.08) is greater than 0.05. This non-significant result suggests that there is not enough evidence to conclude that the survival probabilities differ significantly between the categories based on the observed data.
+
 ```{r}
 # Cox Proportional Hazards Model
 coxph(Surv(turbofan_df$max_cycle, turbofan_df$status) ~ turbofan_df$sensor_measurement_16)
 ```
-##### Sensor Measurement 16
+
+From the result of the Cox proportional hazards model stratified on sensor_measurement_16, it can be seen that the value for “exp(coef)” known as the hazard ratio is 1.3600. This indicates that the hazard of failure for engines with sensor_measurement_16 = 0.03 is approximately 136% higher compared to engines with sensor_measurement_16= 0.02.
+In other words, engines operating at a state where sensor_measurement_16 = 0.03 have a higher risk of failure compared to engines operating at sensor_measurement_16 = 0.02. This interpretation holds true while considering other factors constant within the model.
+
+Here, the log-rank test is non-significant, but the hazard ratio is not equal to 1. This implies that although there may not be sufficient statistical evidence to support a significant difference in survival experiences based on the observed data, there still exists a difference in risk between the compared categories according to the hazard ratio estimates. This could be due to factors such as sample size, variability within categories, or the sensitivity of the statistical test used. It's essential to consider both the log-rank test result and the hazard ratio estimate together to understand the overall picture and potential implications for the studied variable's effect on survival outcomes.
+
+##### `sensor_measurement_19`
 
 ```{r}
 # Kaplan-Mier Plot
@@ -232,24 +263,41 @@ plot(fit.sm, xlab = "Cycles", ylab = "Estimated Probability for Survival",
 
 legend("topright", levels(turbofan_df$sensor_measurement_19), col = c(2,4), lty = 1)   
 ```
+
 ```{r}
-#Log-Rank test
+#Log rank test
 logrank.test <- survdiff(Surv(turbofan_df$max_cycle, turbofan_df$status) ~ turbofan_df$sensor_measurement_19)
 
 logrank.test
 ```
 
+The null hypothesis here is that there is no difference in the probability of an event (failure of the turbofan) between sensor_measurement_19 = 84.93 and sensor_measurement_19 = 100. This null hypothesis is rejected after performing the log-rank test because the p-value for the test (0.01) is less than 0.05. Therefore, there is a significant difference in the probability of failure of the turbofan for the two categories in sensor_measurement_19. This difference in probabilities is quantified by the Cox-proportional hazards model in the next step.
+
 ```{r}
 #Cox-Proportional test
 coxph(Surv(turbofan_df$max_cycle, turbofan_df$status) ~ turbofan_df$sensor_measurement_19)
 ```
-#levels(sensor_measurement_16)
-#TODO fix this part ----------------
+
+From the result of the Cox proportional hazards model stratified on sensor_measurement_19, it can be seen that the value for “exp(coef)” known as the hazard ratio is 0.4764. This indicates that the hazard of failure for engines with sensor_measurement_19 = 100 is approximately 47.64% lower compared to engines with operational_setting_3 = 84.93.
+
+In other words, engines operating at setting 100 have a lower risk of failure compared to engines operating at setting 84.93. This interpretation holds true while considering other factors constant within the model.
+
+The Cox proportional hazards model revealed that certain operational settings significantly impacted the time to failure of the engines. Notably, higher levels of operational settings 1 and 3 were associated with a reduced survival time, indicating a higher risk of failure. In contrast, operational setting 2 showed a less pronounced effect on engine survival, suggesting its lesser relevance in predicting failure.
+
+## Cox Proportional Hazards model
+
+```{r}
 model <- coxph(Surv(max_cycle, status) ~ ., data = turbofan_df)
 summary(model)
-------------------------------------
+```
 
-### GLMNet Model Building
+The preliminary Cox Proportional Hazards model using all the variables in the dataset provides an initial estimate of which variables have the most effect on the probability of failure by studying the `exp(coef)` column from the summary of the model.
+
+The values in the `exp(coef)` column demonstrate how the probability of failure is affected by an increase of 1 unit in each of the variables. A positive value indicates an increase in the probability of failure. For the categorical variables, `operational_setting_3`, `sensor_measurement_16`, and `sensor_measurement_19`, the value under `exp(coef)` shows the comparison with the reference category with respect to the effect on the probability of failure.
+
+This is explained in detail in the report.
+
+## GLMNet
 
 ```{r}
 p <- ncol(turbofan_df) - 2
@@ -286,7 +334,8 @@ c_index <- Cindex(predictions,Surv(turbofan_df$max_cycle, turbofan_df$status))
 c_index
 ```
 
-###### Cindex
+##### C-index
+
 ```{r}
 surv_model_C = cv.glmnet(data,Surv(turbofan_df$max_cycle, turbofan_df$status), 
                          family = "cox", type.measure = "C", 
@@ -299,6 +348,7 @@ print(surv_model_C)
 ```
 
 ##### Fit the model using the optimal lambda value
+
 ```{r}
 fit_C <- glmnet(data,Surv(turbofan_df$max_cycle, turbofan_df$status), 
                 family = "cox", 
@@ -307,10 +357,12 @@ coef(fit_C)
 ```
 
 ##### Make predictions
+
 ```{r}
 predictions <- predict(fit_C, newx = data, type = "response")
 ```
 ##### Evaluate the model performance using concordance index (c-index)
+
 ```{r}
 c_index <- Cindex(predictions,Surv(turbofan_df$max_cycle, turbofan_df$status))
 c_index
